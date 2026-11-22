@@ -462,14 +462,15 @@ class WakeService : Service() {
             "response.audio.stop" -> {
                 val runId = data.optString("run_id")
                 val turnId = data.optString("turn_id")
-                player?.stopAndClear()
+                // 先取样已播放时长：flush 会重置播放头，之后再读就是 0。
+                val playedMs = player?.stopAndClear() ?: 0L
                 pendingChunks = 0
                 audioDonePending = false
                 client?.sendJson(
                     "playback.stopped",
                     "run_id" to runId,
                     "turn_id" to turnId,
-                    "played_audio_ms" to (player?.playedAudioMs() ?: 0L),
+                    "played_audio_ms" to playedMs,
                 )
             }
             "response.interrupted" -> {

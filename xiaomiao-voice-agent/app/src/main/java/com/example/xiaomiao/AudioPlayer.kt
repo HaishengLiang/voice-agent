@@ -19,8 +19,22 @@ class AudioPlayer(
 
     private var track: AudioTrack? = null
 
+    /**
+     * 打断代次。stopAndClear 递增，[play] 里排队的延迟回调据此判断自己是否已过期。
+     * 否则打断前那一轮的 chunk 完成回调会在稍后执行，把新一轮的 pendingChunks 错误递减，
+     * 导致 playback.completed 提前上报、服务端误判播放结束。
+     */
+    private var generation = 0
+
     fun start() {
-        if (track != null) return
+        // 复用已有 track 时也要确保它处于播放态：打断后 track 会停在 PAUSED，
+        // 若不恢复，后续整段音频都会静音（history: 打断后没声音的根因）。
+        track?.let { existing ->
+            if (existing.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                runCatching { existing.play() }
+            }
+            return
+        }
         val minBuffer = AudioTrack.getMinBufferSize(
             SAMPLE_RATE,
             AudioFormat.CHANNEL_OUT_MONO,
@@ -73,20 +87,41 @@ class AudioPlayer(
     fun play(bytes: ByteArray, meta: MossRealtimeClient.AudioMeta) {
         val audioTrack = track ?: return
         if (bytes.isEmpty()) return
+        // 兜底：任何原因让 track 停在非播放态时先恢复，避免 write 阻塞且不出声。
+        if (audioTrack.playState != AudioTrack.PLAYSTATE_PLAYING) {
+            runCatching { audioTrack.play() }
+        }
         val boosted = applyGain(bytes)
         audioTrack.write(boosted, 0, boosted.size)
         val durationMs = (bytes.size / 2L) * 1000L / SAMPLE_RATE
-        handler.postDelayed({ onChunkCompleted(meta) }, durationMs.coerceAtLeast(10L))
+        val gen = generation
+        handler.postDelayed({
+            // 已发生打断：这一块属于上一轮，不能影响新一轮的计数。
+            if (gen == generation) onChunkCompleted(meta)
+        }, durationMs.coerceAtLeast(10L))
     }
 
     fun playedAudioMs(): Long =
         ((track?.playbackHeadPosition ?: 0).toLong() * 1000L / SAMPLE_RATE)
 
-    fun stopAndClear() {
+    /**
+     * 打断播放：丢弃未播放数据，并立刻恢复到播放态。
+     *
+     * flush 只在暂停/停止态才生效，所以顺序必须是 pause → flush → play。
+     * 少最后这一步会让 track 永久停在 PAUSED，后续写入既不出声又可能阻塞——
+     * 这正是「打断后后续语音没声音」的根因。
+     *
+     * @return 本次已实际播放的毫秒数（flush 会重置播放头，必须在之前取样）。
+     */
+    fun stopAndClear(): Long {
+        val playedMs = playedAudioMs()
+        generation++
         track?.runCatching {
             pause()
             flush()
+            play()
         }
+        return playedMs
     }
 
     fun release() {
