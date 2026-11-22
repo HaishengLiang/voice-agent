@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">小喵语音智能</string>
+    <string name="hint_api_key">MOSS API Key（仅保存在本机）</string>
+    <string name="switch_demo">使用官网 demo 服务（无需密钥）</string>
+    <string name="label_api_key">MOSS API Key（切换为真实服务时使用）</string>
+    <string name="btn_start">启动监听</string>
+    <string name="btn_stop">停止监听</string>
+    <string name="btn_wake">手动唤醒</string>
+    <string name="btn_end_session">结束对话</string>
+    <string name="label_audio_output">播放设备</string>
+    <string name="output_speaker">扬声器（外放）</string>
+    <string name="output_headset">耳机 / 听筒</string>
+    <string name="hint_audio_output">选耳机时自动使用已连接的有线/蓝牙耳机，未连接则走听筒</string>
+    <string name="btn_selftest">KWS 自检</string>
+    <string name="state_idle">未启动</string>
+    <string name="transcript_empty">（暂无对话）</string>
+    <string name="label_keepalive">后台保活（息屏唤醒）</string>
+    <string name="btn_ignore_battery">加入电池优化白名单</string>
+    <string name="hint_keepalive">若一键跳转不可用，请在系统设置中手动关闭本应用的电池优化，并允许自启动 / 后台运行。</string>
+    <string name="battery_optimized">电池优化：已开启（息屏可能被冻结，建议关闭）</string>
+    <string name="battery_ignored">电池优化：已忽略，息屏可稳定保活</string>
+    <string name="battery_unknown">电池优化：状态未知（API &lt; 23 无需处理）</string>
+</resources>

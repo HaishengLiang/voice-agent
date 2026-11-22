@@ -1,0 +1,57 @@
+# =============================================================================
+# 本项目所有二进制依赖 / 构建产物均可还原，不入库。
+# 还原方式：bash scripts/fetch-deps.sh   （详见文件头部说明）
+# =============================================================================
+
+# ---------- 工具类：JDK / Android SDK / Gradle / Python venv / 缓存模型包 ----------
+# 整个目录由 setup-toolchain.sh 与 fetch-deps.sh 从互联网重建
+.toolchain/
+
+# 环境搭建日志
+.toolchain-setup.log
+*.log
+
+# ---------- Android 构建产物 ----------
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+.externalNativeBuild/
+.cxx/
+captures/
+output-metadata.json
+
+# ---------- IDE / 编辑器 / 工具私有数据 ----------
+.idea/
+*.iml
+.vscode/
+*.swp
+.workbuddy/
+
+# ---------- KWS 唤醒词模型（全部来自 modelscope，由 fetch-deps.sh 还原）----------
+# onnx 权重
+*.onnx
+# 测试音频
+*.wav
+
+# 例外：应用运行必需的本地音频资源（无法由 fetch-deps.sh 重建，必须入库）
+!xiaomiao-voice-agent/app/src/main/assets/greeting/female.wav
+!xiaomiao-voice-agent/app/src/main/assets/greeting/male.wav
+!xiaomiao-voice-agent/app/src/main/assets/greeting/farewell.wav
+!xiaomiao-voice-agent/app/src/main/assets/greeting/xiaomiao_test.wav
+!xiaomiao-voice-agent/app/src/main/assets/greeting/xiaodu_test.wav
+# 例外：当前唤醒词「小喵小喵」（由 generate-keywords.sh 生成，属项目配置，必须入库）
+!xiaomiao-voice-agent/app/src/main/assets/kws/keywords.txt
+
+# 模型附带的配置 / 词表 / 说明文件
+xiaomiao-voice-agent/app/src/main/assets/kws/tokens.txt
+xiaomiao-voice-agent/app/src/main/assets/kws/configuration.json
+xiaomiao-voice-agent/app/src/main/assets/kws/keywords_raw.txt
+xiaomiao-voice-agent/app/src/main/assets/kws/README.md
+xiaomiao-voice-agent/app/src/main/assets/kws/test_wavs/test_keywords.txt
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+.venv/

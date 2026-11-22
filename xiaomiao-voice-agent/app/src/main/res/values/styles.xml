@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.XiaomiaoVoice" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="colorPrimary">#4C6FFF</item>
+        <item name="colorPrimaryDark">#3550CC</item>
+        <item name="colorAccent">#4C6FFF</item>
+        <item name="android:windowBackground">#F7F8FA</item>
+        <item name="android:textColorPrimary">#1F2329</item>
+    </style>
+</resources>
