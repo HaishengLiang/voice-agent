@@ -18,7 +18,7 @@
 | 本地问候音 | 唤醒瞬间播放 `assets/greeting/female.wav`，播放期间抑制上行，避免自问自答 |
 | 道别即结束 | 命中「再见」「退下」「不聊了」等词后主动收尾，播放挂断音、回到唤醒监听 |
 | 播放设备可选 | 扬声器外放 / 耳机听筒（有线、USB、蓝牙 SCO），运行时切换即时生效 |
-| 服务模式可选 | 官网 demo（免密钥）或真实 API（Bearer Key） |
+| 服务路径可选 | 「Demo 路径」直连官网公开服务（免密钥）/「SDK 路径」连 MOSS-Live（需保存 API Key） |
 
 ## 工作流程
 
@@ -97,7 +97,9 @@ moss.api.key=sk-xxxxxxxx
 
 这个文件已被 `.gitignore` 忽略；首次安装用构建注入值，之后在界面里保存过就以本机保存值为准。
 
-不想申请 Key 也可以：界面勾选「使用官网 demo 服务」即可直接跑通（demo 端点连上后服务端自动推 `session_attached`，**不能**再发 `attach_session`，否则报 `invalid_public_request`）。
+不想申请 Key 也可以：界面选「Demo 路径」即可直接跑通（demo 端点连上后服务端自动推 `session_attached`，**不能**再发 `attach_session`，否则报 `invalid_public_request`）。
+
+选「SDK 路径」时，API Key 必须在界面上点「保存 Key」显式保存后才会放行启动——只填不保存会被拦下并提示，避免用户以为在用自己的 Key、实际跑的是构建内置密钥。
 
 ## 构建
 
@@ -131,7 +133,7 @@ bash scripts/build-apk.sh
 5. 说「再见」「退下」「不聊了」结束；或等空闲超时自动结束；或点「结束对话」。
 6. 「停止监听」才会真正退出前台服务（结束对话只是回到监听）。
 
-界面上还可配置：播放设备、MOSS API Key、demo/真实服务切换、空闲超时毫秒数，以及「KWS 自检」。
+界面上还可配置：服务路径（Demo / SDK）、API Key 及其保存、播放设备、空闲超时毫秒数，以及「KWS 自检」。
 
 ## 修改唤醒词
 
