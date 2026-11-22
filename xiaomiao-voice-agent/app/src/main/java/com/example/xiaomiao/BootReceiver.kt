@@ -27,7 +27,7 @@ class BootReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             val notification = NotificationCompat.Builder(context, WakeService.CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(R.drawable.ic_stat_notify)
                 .setContentTitle("小喵语音智能需要手动启动")
                 .setContentText("系统限制后台启动麦克风，请点击此处启动监听")
                 .setContentIntent(openApp)

@@ -106,7 +106,7 @@ class WakeService : Service() {
 
     private fun notification(text: String) =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher)
+            .setSmallIcon(R.drawable.ic_stat_notify)
             .setContentTitle("小喵语音智能")
             .setContentText(text)
             .setContentIntent(
