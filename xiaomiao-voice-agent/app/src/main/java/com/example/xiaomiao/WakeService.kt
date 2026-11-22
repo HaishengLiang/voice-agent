@@ -184,8 +184,9 @@ class WakeService : Service() {
      * 配置语音通信会话，让系统 AEC 生效：
      * - MODE_IN_COMMUNICATION：多数设备需要它才真正启用消除器；
      * - 输出设备：按配置走扬声器或耳机/听筒（见 applyOutputRouting）；
-     * - 音量：不改动系统音量，用户当前设置多少就用多少（不再强制拉满）。
-     *   VOICE_COMMUNICATION 播放走 STREAM_VOICE_CALL，声音大小由用户在系统里控制。
+     * - 音量：播放走 STREAM_VOICE_CALL。早期版本曾把该流 setStreamVolume(max) 顶到满格，
+     *   满格值会留在系统里不会自动回落，导致进入通信模式后声音突然很大。这里按媒体音量
+     *   比例把通话音量重新锚定到合理水平（并限幅，永不顶满），真正跟随用户的系统音量。
      */
     private fun configureAudioForAec() {
         val am = getSystemService(AudioManager::class.java) ?: return
@@ -193,13 +194,37 @@ class WakeService : Service() {
         savedAudioMode = am.mode
         @Suppress("DEPRECATION")
         savedSpeakerphone = am.isSpeakerphoneOn
-        savedVoiceVolume = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
         try {
             am.mode = AudioManager.MODE_IN_COMMUNICATION
             applyOutputRouting()
-            // 保持系统当前通话音量，不做任何修改。
+            alignCallVolumeToMedia(am)
+            // 记录锚定后的值，停止监听时恢复到这个合理水平，而不是历史遗留的满格。
+            savedVoiceVolume = am.getStreamVolume(AudioManager.STREAM_VOICE_CALL)
         } catch (e: Throwable) {
             VoiceState.set(error = "音频通道配置失败：${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    /**
+     * 把通话音量按媒体音量的相对比例锚定，避免顶到满格。
+     * 用户媒体音量 7/16≈44% → 通话音量也落在约 44%（限幅最高 80%，永远不满格）。
+     * 这样 AI 语音/问候音的响度与用户在系统里设置的媒体音量感受一致。
+     */
+    private fun alignCallVolumeToMedia(am: AudioManager) {
+        val mediaMax = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+        val mediaVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val callMax = am.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL)
+        val callMin = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            am.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL)
+        } else 0
+        if (mediaMax <= 0 || callMax <= callMin) return
+        val ratio = (mediaVol.toFloat() / mediaMax.toFloat()).coerceIn(0f, 1f)
+        // 留安全余量：最高只到 80%，绝不顶满格刺耳；媒体音量为 0 时给一个很小的可听底噪。
+        val capped = if (ratio <= 0f) 0.12f else ratio.coerceAtMost(0.8f)
+        val target = (callMin + capped * (callMax - callMin)).toInt().coerceIn(callMin, callMax)
+        if (am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) != target) {
+            @Suppress("DEPRECATION")
+            am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, target, 0)
         }
     }
 

@@ -48,7 +48,8 @@ class AudioPlayer(
         // 与采集共享 audioSession，进一步确保 AEC 能把播放作为参考。
         if (audioSessionId > 0) builder.setSessionId(audioSessionId)
         val audioTrack = builder.build()
-        // 音量走通话流，已在 WakeService 里拉满；这里保持满轨 + 软件增益。
+        // 音量走通话流，通话音量由 WakeService 按系统媒体音量比例锚定（不拉满）；
+        // 这里保持满轨，响度完全跟随系统通话音量。
         audioTrack.setVolume(1.0f)
         audioTrack.play()
         track = audioTrack
