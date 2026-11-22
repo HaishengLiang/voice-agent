@@ -37,10 +37,14 @@ class WakeDetector(private val context: Context) {
                 featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
                 modelConfig = modelConfig,
                 keywordsFile = "$MODEL_DIR/keywords.txt",
-                maxActivePaths = 4,
-                // 与离线验证（test-kws-offline.py 默认参数）一致，保证真机灵敏度。
+                // keywords.txt 里有多条同义发音（标准音 + 方言把「小」读四声的变体），
+                // 它们共享前缀，活跃路径给少了第二条会被第一条挤掉：实测 4 条只能中 39/47，
+                // 给到 8 条才能 47/47。RTF 只从 0.021 涨到 0.029，代价可以忽略。
+                maxActivePaths = 8,
+                // 与离线验证（scripts/tune-kws.py）一致：boost 1.0 + 阈值 0.35 时
+                // 正样本 47/47、21 条负样本零误唤醒；boost 提到 1.5 以上会开始误唤醒「小妙小妙」。
                 keywordsScore = 1.0f,
-                keywordsThreshold = 0.25f,
+                keywordsThreshold = 0.35f,
             ),
         )
         stream = spotter.createStream()

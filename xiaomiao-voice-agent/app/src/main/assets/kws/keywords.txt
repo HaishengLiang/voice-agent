@@ -1,1 +1,2 @@
-x iǎo m iāo x iǎo m iāo :2.0 #0.35 @小喵小喵
+x iǎo m iāo x iǎo m iāo :1.0 #0.35 @小喵小喵
+x iào m iāo x iào m iāo :1.0 #0.35 @小喵小喵

@@ -146,13 +146,16 @@ bash scripts/build-apk.sh
 
 ## 修改唤醒词
 
-唤醒词不开放界面配置，需在构建期改。当前关键词由 `assets/kws/keywords.txt` 单行决定：
+唤醒词不开放界面配置，需在构建期改。当前关键词由 `assets/kws/keywords.txt` 决定，**两行**：
 
 ```
-x iǎo m iāo x iǎo m iāo :2.0 #0.35 @小喵小喵
+x iǎo m iāo x iǎo m iāo :1.0 #0.35 @小喵小喵   ← 标准读音（小=三声，喵=一声）
+x iào m iāo x iào m iāo :1.0 #0.35 @小喵小喵   ← 方言/口音把「小」读四声时命中
 ```
 
-用脚本重新生成（依赖 `.toolchain/venv` 里的 `sherpa-onnx-cli`，会把中文转成 ppinyin 音素序列）：
+一行的格式是 `<音素序列> :<boost> #<阈值> @<显示文本>`，四个部分是 sherpa-onnx 的关键词协议。
+
+用脚本重新生成（依赖 `.toolchain/venv` 里的 `sherpa-onnx-cli`，会把中文转成 ppinyin 音素序列，并自动追加四声变体）：
 
 ```bash
 bash scripts/generate-keywords.sh "小熊小熊"
@@ -161,9 +164,32 @@ bash scripts/generate-keywords.sh "小熊小熊"
 然后重新构建、下发。注意事项：
 
 - 模型是通用 zipformer2 transducer，关键词靠音素序列约束解码，所以**任选中文词都能用**，不必重训模型；但音节必须存在于 `tokens.txt`（227 个 ppinyin 音素）。
-- 双音节词（如「小喵」）误唤醒率明显偏高，建议 4 个音节以上、叠词更稳。
-- 灵敏度由 `WakeDetector.kt` 里的 `keywordsScore`（1.0）和 `keywordsThreshold`（0.25）控制，与离线验证脚本 `scripts/test-kws-offline.py` 的默认参数保持一致，改动前先跑离线验证。
+- 双音节词（如「小喵」）误唤醒率明显偏高，建议 4 个音节以上、叠词更稳。实测把两音节「小喵」也加进关键词，命中率涨 0、误唤醒从 0 涨到 8/21，**不要加**。
 - 「KWS 自检」播放的是固定样本 `assets/greeting/xiaomiao_test.wav`（「小喵小喵」录音）。改词后自检必然报「未命中」，属预期行为，需同步替换样本。
+
+## 唤醒灵敏度调优
+
+唤醒不准（语速快慢、口音、轻声）时，四个旋钮按性价比排序：
+
+| 旋钮 | 位置 | 作用 | 实测结论 |
+|---|---|---|---|
+| 发音变体 | `keywords.txt` 增加行 | 覆盖声调/口音漂移 | 加一条「小读四声」后命中原 40/47 → **47/47**，误唤醒仍 0 |
+| `maxActivePaths` | `WakeDetector.kt` | 多条关键词同时搜索的宽度 | 4 条路径时第二条被挤掉（39/47），**8 才够**；RTF 仅 0.021→0.029 |
+| `:boost`（每行） | `keywords.txt` | 关键词的 log 概率加成 | 1.0 最佳；提到 1.5 起开始误唤醒「小妙小妙」，2.0 反而命中降到 36/47 |
+| `#阈值` | `keywords.txt` | 触发门限，越低越敏感 | 0.25~0.35 都在平台区，0.45 掉一例；0.35 左右留余量 |
+
+参数不是拍脑袋定的，用调参台跑出来：
+
+```bash
+python scripts/tune-kws.py corpus    # edge-tts 合成 7 音色 × 5 语速 + 音高/音量漂移 + 负样本
+python scripts/tune-kws.py sweep     # 扫关键词集合/阈值/boost/AGC，打印命中率与误唤醒
+```
+
+语料在 `.toolchain/kws-tune/corpus/`：47 条正样本（含 -25%~+25% 语速、±6% 音高、-12/-18dB 轻声、东北与中原官话）、21 条负样本（「小喵」「喵喵」「小妙小妙」「小苗小苗」「小米小爱」等近音词 + 官方测试集真实句子）。
+
+想用**自己的录音**验证，把 16 kHz 单声道 wav 丢进 `corpus/pos/` 或 `corpus/neg/` 再 `sweep` 即可。
+
+真机侧还有两个离线语料测不出来的因素：麦克风采集链（当前用 `VOICE_COMMUNICATION`，会走系统 AGC/NS，轻声有利、强降噪可能削掉辅音）与说话距离。如果调参后仍觉得远场不灵，先换 `VOICE_RECOGNITION` 采集源试，再考虑换更大的 KWS 模型。
 
 ## 协议要点
 
@@ -202,6 +228,7 @@ DEMO_ENDPOINT    = "wss://www.moss.cn/api/v1/public/website/moss-live/ws?voice=f
 ## 相关文档
 
 - [docs/adb-wireless-setup.md](docs/adb-wireless-setup.md) —— 无线调试设备信息、双策略自动发现、adb daemon 重启等踩坑记录
-- `scripts/test-kws-offline.py` —— 离线跑唤醒词命中率，调灵敏度前先过一遍
+- `scripts/tune-kws.py` —— 唤醒灵敏度调参台：造语料 + 扫关键词变体/阈值/boost，输出命中率与误唤醒
+- `scripts/test-kws-offline.py` —— 用单个关键词文件跑命中率，快速回归
 - `scripts/probe-moss-live.py` / `probe-moss-demo.py` —— 命令行验证 MOSS-Live 连通性
 - `scripts/make-app-icon.py` —— 从猫咪插画生成各密度启动图标与预览图
