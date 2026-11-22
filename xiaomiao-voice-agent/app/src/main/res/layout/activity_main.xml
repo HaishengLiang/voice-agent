@@ -1,271 +1,75 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/rootScrollView"
+<!-- 主页：只做状态展示。中间大 logo，下方状态灯 + 阶段文字，右上角进入设置。
+     背景与 logo 的四角米色一致，让猫头看起来是浮在页面上而不是贴了一张方图。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:background="@color/home_background">
 
+    <!-- 居中主体：logo + 状态 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="MOSS-Live 常驻唤醒"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+        <ImageView
+            android:id="@+id/logoImage"
+            android:layout_width="264dp"
+            android:layout_height="264dp"
+            android:contentDescription="@string/app_name"
+            android:scaleType="fitCenter"
+            android:src="@drawable/logo_cat" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="离线唤醒词检测，唤醒后进入全双工语音对话"
-            android:textColor="#666666"
-            android:textSize="13sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="@string/label_service_mode"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <!-- 服务路径二选一：demo 免密钥；SDK 需填写并保存 API Key 才能启动 -->
-        <RadioGroup
-            android:id="@+id/modeGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:orientation="vertical">
-
-            <RadioButton
-                android:id="@+id/radioDemo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:text="@string/mode_demo"
-                android:textSize="14sp" />
-
-            <RadioButton
-                android:id="@+id/radioSdk"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/mode_sdk"
-                android:textSize="14sp" />
-        </RadioGroup>
-
-        <TextView
-            android:id="@+id/modeHintText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="@string/hint_mode_demo"
-            android:textColor="#888888"
-            android:textSize="12sp" />
-
-        <!-- SDK 专属：API Key 输入 + 显式保存 -->
+        <!-- 状态指示器：圆点颜色即状态（红=未启动 / 黄=接入中 / 绿=监听或对话） -->
         <LinearLayout
-            android:id="@+id/apiKeySection"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:layout_marginTop="12dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/statusDot"
+                android:layout_width="16dp"
+                android:layout_height="16dp"
+                android:background="@drawable/status_dot" />
 
             <TextView
-                android:id="@+id/apiKeyLabel"
-                android:layout_width="match_parent"
+                android:id="@+id/statusLabel"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/label_api_key"
-                android:textSize="14sp" />
-
-            <EditText
-                android:id="@+id/apiKeyInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="@string/hint_api_key"
-                android:importantForAutofill="no"
-                android:inputType="textPassword"
-                android:singleLine="true" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:gravity="center_vertical"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/saveKeyButton"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/btn_save_key" />
-
-                <TextView
-                    android:id="@+id/apiKeyStatusText"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:layout_weight="1"
-                    android:textSize="12sp" />
-            </LinearLayout>
+                android:layout_marginStart="10dp"
+                android:text="@string/home_state_idle"
+                android:textColor="@color/home_text_primary"
+                android:textSize="18sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- 播放设备：扬声器 / 耳机（含有线/蓝牙/听筒） -->
+        <!-- 仅在未启动时显示，把用户引导到设置页（主页不放操作按钮） -->
         <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="@string/label_audio_output"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <RadioGroup
-            android:id="@+id/audioOutputGroup"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/radioSpeaker"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/output_speaker"
-                android:textSize="14sp" />
-
-            <RadioButton
-                android:id="@+id/radioHeadset"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:text="@string/output_headset"
-                android:textSize="14sp" />
-        </RadioGroup>
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="@string/hint_audio_output"
-            android:textColor="#888888"
-            android:textSize="12sp" />
-
-        <TextView
-            android:layout_width="match_parent"
+            android:id="@+id/homeHint"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="空闲多久后自动结束对话（毫秒）"
-            android:textSize="14sp" />
-
-        <EditText
-            android:id="@+id/idleTimeoutInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:inputType="number"
-            android:singleLine="true"
-            android:text="30000" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/startButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/btn_start" />
-
-            <Button
-                android:id="@+id/stopButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/btn_stop" />
-
-            <Button
-                android:id="@+id/wakeButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/btn_wake" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/selftestButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/btn_selftest" />
-
-        <!-- 后台保活：息屏后能否持续唤醒与对话，取决于电池优化白名单 -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="@string/label_keepalive"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/batteryStatusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:text="@string/home_hint_idle"
+            android:textColor="@color/home_text_secondary"
             android:textSize="13sp" />
-
-        <Button
-            android:id="@+id/ignoreBatteryButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/btn_ignore_battery" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="@string/hint_keepalive"
-            android:textColor="#888888"
-            android:textSize="12sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:text="状态"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/stateText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/state_idle"
-            android:textSize="14sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:text="对话"
-            android:textSize="14sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/transcriptText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="@string/transcript_empty"
-            android:textSize="14sp" />
     </LinearLayout>
-</ScrollView>
+
+    <!-- 设置入口：右上角齿轮 -->
+    <ImageView
+        android:id="@+id/settingsButton"
+        android:layout_width="52dp"
+        android:layout_height="52dp"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="16dp"
+        android:layout_marginEnd="12dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/title_settings"
+        android:padding="14dp"
+        android:src="@drawable/ic_settings" />
+</FrameLayout>
