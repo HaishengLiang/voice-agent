@@ -9,14 +9,16 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
-import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -26,8 +28,11 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
     private lateinit var apiKeyInput: EditText
-    private lateinit var apiKeyLabel: TextView
-    private lateinit var demoSwitch: CheckBox
+    private lateinit var apiKeySection: LinearLayout
+    private lateinit var apiKeyStatusText: TextView
+    private lateinit var saveKeyButton: Button
+    private lateinit var modeGroup: RadioGroup
+    private lateinit var modeHintText: TextView
     private lateinit var audioOutputGroup: RadioGroup
     private lateinit var idleTimeoutInput: EditText
     private lateinit var stateText: TextView
@@ -48,8 +53,11 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         apiKeyInput = findViewById(R.id.apiKeyInput)
-        apiKeyLabel = findViewById(R.id.apiKeyLabel)
-        demoSwitch = findViewById(R.id.demoSwitch)
+        apiKeySection = findViewById(R.id.apiKeySection)
+        apiKeyStatusText = findViewById(R.id.apiKeyStatusText)
+        saveKeyButton = findViewById(R.id.saveKeyButton)
+        modeGroup = findViewById(R.id.modeGroup)
+        modeHintText = findViewById(R.id.modeHintText)
         audioOutputGroup = findViewById(R.id.audioOutputGroup)
         idleTimeoutInput = findViewById(R.id.idleTimeoutInput)
         stateText = findViewById(R.id.stateText)
@@ -62,15 +70,47 @@ class MainActivity : AppCompatActivity() {
         stopButton = findViewById(R.id.stopButton)
         wakeButton = findViewById(R.id.wakeButton)
 
-        demoSwitch.isChecked = Config.useDemo
+        modeGroup.check(if (Config.useDemo) R.id.radioDemo else R.id.radioSdk)
         audioOutputGroup.check(
             if (Config.audioOutput == AudioOutput.SPEAKER) R.id.radioSpeaker else R.id.radioHeadset
         )
         apiKeyInput.setText(Config.apiKey)
         idleTimeoutInput.setText(Config.idleTimeoutMs.toString())
         applyModeVisibility()
+        refreshApiKeyStatus()
 
-        demoSwitch.setOnCheckedChangeListener { _, _ -> applyModeVisibility() }
+        modeGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == -1) return@setOnCheckedChangeListener
+            val demo = isDemoMode()
+            // 路径切换立即落盘：下次唤醒/连接按新路径读取配置。
+            Config.useDemo = demo
+            applyModeVisibility()
+            refreshApiKeyStatus()
+            // 正在对话时切路径：结束当前会话，避免新旧路径混用。
+            val phase = VoiceState.flow.value.phase
+            if (phase == VoiceState.Phase.SESSION_CONNECTING ||
+                phase == VoiceState.Phase.SESSION_ACTIVE
+            ) {
+                startService(WakeService.ACTION_END_SESSION)
+            }
+        }
+
+        apiKeyInput.doAfterTextChanged { refreshApiKeyStatus() }
+
+        saveKeyButton.setOnClickListener {
+            val key = apiKeyInput.text?.toString()?.trim().orEmpty()
+            if (key.isBlank()) {
+                Toast.makeText(this, R.string.toast_key_empty, Toast.LENGTH_SHORT).show()
+                apiKeyInput.requestFocus()
+                return@setOnClickListener
+            }
+            Config.apiKey = key
+            // 回写去掉首尾空白后的值，同时刷新「已保存」状态。
+            apiKeyInput.setText(key)
+            refreshApiKeyStatus()
+            Toast.makeText(this, R.string.toast_key_saved, Toast.LENGTH_SHORT).show()
+        }
+
         audioOutputGroup.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == -1) return@setOnCheckedChangeListener
             Config.audioOutput = if (checkedId == R.id.radioSpeaker) AudioOutput.SPEAKER else AudioOutput.HEADSET
@@ -81,14 +121,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         startButton.setOnClickListener {
-            saveConfig()
+            if (!prepareConfig()) return@setOnClickListener
             startService(WakeService.ACTION_START)
         }
         stopButton.setOnClickListener {
             startService(WakeService.ACTION_STOP)
         }
         wakeButton.setOnClickListener {
-            saveConfig()
+            if (!prepareConfig()) return@setOnClickListener
             val phase = VoiceState.flow.value.phase
             val inSession = phase == VoiceState.Phase.SESSION_CONNECTING ||
                 phase == VoiceState.Phase.SESSION_ACTIVE
@@ -160,15 +200,85 @@ class MainActivity : AppCompatActivity() {
         ContextCompat.startForegroundService(this, intent)
     }
 
+    /** 当前是否走 demo 路径。 */
+    private fun isDemoMode() = modeGroup.checkedRadioButtonId == R.id.radioDemo
+
+    /** demo 路径隐藏整个 API Key 区域（输入框 + 保存按钮 + 状态）。 */
     private fun applyModeVisibility() {
-        val isDemo = demoSwitch.isChecked
-        apiKeyLabel.visibility = if (isDemo) View.GONE else View.VISIBLE
-        apiKeyInput.visibility = if (isDemo) View.GONE else View.VISIBLE
+        val demo = isDemoMode()
+        apiKeySection.visibility = if (demo) View.GONE else View.VISIBLE
+        modeHintText.setText(if (demo) R.string.hint_mode_demo else R.string.hint_mode_sdk)
     }
 
-    private fun saveConfig() {
-        Config.useDemo = demoSwitch.isChecked
-        Config.apiKey = apiKeyInput.text?.toString()?.trim().orEmpty()
+    /** 刷新 Key 状态：已保存 / 有未保存修改 / 仅有构建内置 / 未填写。 */
+    private fun refreshApiKeyStatus() {
+        if (isDemoMode()) return
+        val typed = apiKeyInput.text?.toString()?.trim().orEmpty()
+        val saved = Config.apiKey
+        val ready: Boolean
+        val text: String
+        when {
+            Config.hasSavedApiKey && typed == saved -> {
+                ready = true
+                text = getString(R.string.api_key_saved, maskKey(saved))
+            }
+            typed.isNotBlank() -> {
+                ready = false
+                text = getString(R.string.api_key_unsaved)
+            }
+            saved.isNotBlank() -> {
+                ready = false
+                text = getString(R.string.api_key_builtin)
+            }
+            else -> {
+                ready = false
+                text = getString(R.string.api_key_missing)
+            }
+        }
+        apiKeyStatusText.text = text
+        apiKeyStatusText.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (ready) android.R.color.holo_green_dark else android.R.color.holo_red_dark,
+            )
+        )
+    }
+
+    /** 只露头尾，避免整串 Key 长期显示在屏幕上。 */
+    private fun maskKey(key: String): String =
+        if (key.length <= 8) "****" else key.take(4) + "****" + key.takeLast(4)
+
+    /**
+     * 启动前收敛配置，返回是否允许启动。
+     * demo 路径直接放行；SDK 路径必须已在界面上显式「保存 Key」，否则拦下并提示，
+     * 避免用户以为在用自己的 Key、实际跑的是构建内置密钥。
+     */
+    private fun prepareConfig(): Boolean {
+        saveIdleTimeout()
+        if (isDemoMode()) {
+            Config.useDemo = true
+            return true
+        }
+        val typed = apiKeyInput.text?.toString()?.trim().orEmpty()
+        if (typed.isBlank()) {
+            val msg = getString(R.string.error_sdk_need_key)
+            stateText.text = msg
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            apiKeyInput.requestFocus()
+            return false
+        }
+        if (!Config.hasSavedApiKey || typed != Config.apiKey) {
+            // 状态栏会被服务状态流持续覆盖，这里同时弹 Toast 保证提示生效。
+            val msg = getString(R.string.error_sdk_need_save)
+            stateText.text = msg
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+            return false
+        }
+        Config.useDemo = false
+        return true
+    }
+
+    private fun saveIdleTimeout() {
         val timeout = idleTimeoutInput.text?.toString()?.toLongOrNull() ?: 30_000L
         Config.idleTimeoutMs = timeout.coerceIn(5_000L, 600_000L)
     }

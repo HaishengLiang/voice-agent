@@ -151,6 +151,12 @@ class WakeService : Service() {
 
     private fun startListening() {
         if (capture != null) return
+        // SDK 路径没有可用 Key 就不空跑监听：开机自启等入口会绕过界面校验，这里兜底。
+        if (!Config.useDemo && Config.apiKey.isBlank()) {
+            VoiceState.set(VoiceState.Phase.IDLE, "启动失败", getString(R.string.error_sdk_need_key))
+            stopSelf()
+            return
+        }
         try {
             configureAudioForAec()
             detector = WakeDetector(applicationContext)

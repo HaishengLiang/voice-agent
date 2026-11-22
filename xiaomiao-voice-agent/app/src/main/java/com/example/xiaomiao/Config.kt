@@ -46,6 +46,14 @@ object Config {
         get() = prefs.getString(KEY_API, BuildConfig.MOSS_API_KEY) ?: BuildConfig.MOSS_API_KEY
         set(value) = prefs.edit().putString(KEY_API, value).apply()
 
+    /**
+     * 用户是否在本机显式保存过 API Key。
+     * 区别于构建时注入的 Key：SDK 路径要求用户亲自「保存 Key」后才允许启动，
+     * 避免用户以为在用自己的 Key、实际跑的是构建内置密钥。
+     */
+    val hasSavedApiKey: Boolean
+        get() = prefs.contains(KEY_API) && !prefs.getString(KEY_API, "").isNullOrBlank()
+
     /** 根据当前模式返回连接地址。真实模式允许界面覆盖自定义 endpoint。 */
     val endpoint: String
         get() = if (useDemo) DEMO_ENDPOINT
