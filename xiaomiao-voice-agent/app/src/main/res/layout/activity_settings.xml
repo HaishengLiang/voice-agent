@@ -234,6 +234,22 @@
             android:layout_marginTop="8dp"
             android:text="@string/btn_selftest" />
 
+        <CheckBox
+            android:id="@+id/autoStartSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:checked="true"
+            android:text="@string/switch_auto_start"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/hint_auto_start"
+            android:textColor="@color/home_text_secondary"
+            android:textSize="12sp" />
+
         <!-- 后台保活：息屏后能否持续唤醒与对话，取决于电池优化白名单 -->
         <TextView
             android:layout_width="match_parent"

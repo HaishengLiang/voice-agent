@@ -13,6 +13,7 @@ object Config {
     private const val KEY_IDLE = "idle_timeout_ms"
     private const val KEY_USE_DEMO = "use_demo"
     private const val KEY_AUDIO_OUTPUT = "audio_output"
+    private const val KEY_AUTO_START = "auto_start_on_open"
 
     // 真实 API：需要 API Key，连上后主动发 attach_session。
     const val DEFAULT_ENDPOINT = "wss://api.mosi.cn/v1/realtime?model=moss-live-1.0"
@@ -62,4 +63,12 @@ object Config {
     var idleTimeoutMs: Long
         get() = prefs.getLong(KEY_IDLE, 30_000L)
         set(value) = prefs.edit().putLong(KEY_IDLE, value).apply()
+
+    /**
+     * 打开应用时自动开始监听。主页没有操作按钮，默认打开即用；
+     * 需要保持安静（比如只想进设置改配置）时可在设置页关掉。
+     */
+    var autoStartOnOpen: Boolean
+        get() = prefs.getBoolean(KEY_AUTO_START, true)
+        set(value) = prefs.edit().putBoolean(KEY_AUTO_START, value).apply()
 }

@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioGroup
@@ -80,6 +81,12 @@ class SettingsActivity : AppCompatActivity() {
         idleTimeoutInput.setText(Config.idleTimeoutMs.toString())
         applyModeVisibility()
         refreshApiKeyStatus()
+
+        val autoStartSwitch = findViewById<CheckBox>(R.id.autoStartSwitch)
+        autoStartSwitch.isChecked = Config.autoStartOnOpen
+        autoStartSwitch.setOnCheckedChangeListener { _, checked ->
+            Config.autoStartOnOpen = checked
+        }
 
         modeGroup.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == -1) return@setOnCheckedChangeListener

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 使用指南的底卡：半透明白，比米色背景略亮一点，只用来做视觉分组 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#80FFFFFF" />
+    <corners android:radius="18dp" />
+</shape>

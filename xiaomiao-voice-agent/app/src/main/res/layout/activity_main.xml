@@ -1,25 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 主页：只做状态展示。中间大 logo，下方状态灯 + 阶段文字，右上角进入设置。
-     背景与 logo 的四角米色一致，让猫头看起来是浮在页面上而不是贴了一张方图。 -->
+<!-- 主页：只做状态展示。中间大 logo，下方状态灯 + 阶段文字 + 三步使用指南，右上角进入设置。
+     背景与 logo 的四角米色一致，让猫头看起来是浮在页面上而不是贴了一张方图。
+     竖向用两个等权重占位（下大于上）把内容整体抬到中线偏上，页面不滚动。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/home_background">
 
-    <!-- 居中主体：logo + 状态 -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center"
-        android:gravity="center_horizontal"
+        android:layout_height="match_parent"
         android:orientation="vertical"
-        android:paddingStart="24dp"
-        android:paddingEnd="24dp">
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp">
+
+        <!-- 上方留白：权重小于下方，重心因此上移 -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
         <ImageView
             android:id="@+id/logoImage"
-            android:layout_width="264dp"
-            android:layout_height="264dp"
+            android:layout_width="248dp"
+            android:layout_height="248dp"
+            android:layout_gravity="center_horizontal"
             android:contentDescription="@string/app_name"
             android:scaleType="fitCenter"
             android:src="@drawable/logo_cat" />
@@ -28,7 +33,8 @@
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="10dp"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
@@ -49,15 +55,41 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- 仅在未启动时显示，把用户引导到设置页（主页不放操作按钮） -->
-        <TextView
-            android:id="@+id/homeHint"
-            android:layout_width="wrap_content"
+        <!-- 使用指南：三步，没有按钮也没有开关，只看不点 -->
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="@string/home_hint_idle"
-            android:textColor="@color/home_text_secondary"
-            android:textSize="13sp" />
+            android:layout_marginTop="26dp"
+            android:background="@drawable/bg_home_guide"
+            android:orientation="vertical"
+            android:paddingStart="18dp"
+            android:paddingTop="14dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="15dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/home_guide_title"
+                android:textColor="@color/home_text_secondary"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:lineSpacingExtra="9dp"
+                android:text="@string/home_guide_body"
+                android:textColor="@color/home_text_primary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 下方留白：权重约为上方两倍，整体重心停在中线之上 -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2" />
     </LinearLayout>
 
     <!-- 设置入口：右上角齿轮 -->

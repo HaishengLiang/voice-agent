@@ -1,8 +1,10 @@
 package com.example.xiaomiao
 
 import android.animation.ValueAnimator
+import android.Manifest
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.View
@@ -18,13 +20,13 @@ import kotlinx.coroutines.launch
  * 主页：只做状态展示，不承载任何语音操作。
  *
  * 布局：中间巨型 logo，下方状态灯（红=未启动 / 黄=接入中 / 绿=监听或对话）+ 阶段文字，
- * 右上角齿轮进入 [SettingsActivity]。启动/停止监听、手动唤醒、KWS 自检、Key 配置全在设置页，
+ * 再往下是一张三步使用指南卡（纯文字，不可点击），右上角齿轮进入 [SettingsActivity]。
+ * 启动/停止监听、手动唤醒、KWS 自检、Key 配置全在设置页，
  * 这样主页可以长期开着而不担心误触，也方便当摆件放在桌面上。
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var statusDot: View
     private lateinit var statusLabel: TextView
-    private lateinit var homeHint: TextView
     private var pulse: ValueAnimator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,7 +38,6 @@ class MainActivity : AppCompatActivity() {
 
         statusDot = findViewById(R.id.statusDot)
         statusLabel = findViewById(R.id.statusLabel)
-        homeHint = findViewById(R.id.homeHint)
 
         findViewById<View>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -47,6 +48,31 @@ class MainActivity : AppCompatActivity() {
                 VoiceState.flow.collect { applyStatus(it) }
             }
         }
+
+        autoStartIfNeeded()
+    }
+
+    /**
+     * 打开应用即开始监听：主页没有任何操作按钮，用户的自然预期是「打开就能用」。
+     *
+     * 以下任一情况都不自动拉起，留在未启动态并在设置页给出原因，避免一进来就报错：
+     * - 用户在设置页关掉了「打开应用自动监听」；
+     * - 服务已在运行（返回主页、从通知进入等，不需要重复启动）；
+     * - 还没授予麦克风权限（服务会立刻失败）；
+     * - 选了 SDK 路径但没保存 Key（服务层会拦下）。
+     */
+    private fun autoStartIfNeeded() {
+        if (!Config.autoStartOnOpen) return
+        if (VoiceState.flow.value.phase != VoiceState.Phase.IDLE) return
+        val micGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!micGranted) return
+        if (!Config.useDemo && !Config.hasSavedApiKey) return
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, WakeService::class.java).setAction(WakeService.ACTION_START),
+        )
     }
 
     /** 把语音阶段映射成灯色 + 短语。 */
@@ -75,9 +101,7 @@ class MainActivity : AppCompatActivity() {
             ColorStateList.valueOf(ContextCompat.getColor(this, colorRes))
         statusLabel.setText(labelRes)
 
-        // 未启动时给一条去设置页的引导；运行中收起，保持首页干净。
-        homeHint.visibility =
-            if (snapshot.phase == VoiceState.Phase.IDLE) View.VISIBLE else View.GONE
+        // 「怎么用」由常驻的三步指南承担，这里只维护灯色与呼吸，避免重复提示。
 
         // 对话中让灯呼吸，与「监听中常亮」区分，不额外加文案。
         if (snapshot.phase == VoiceState.Phase.SESSION_ACTIVE) startPulse() else stopPulse()
