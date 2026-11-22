@@ -62,7 +62,9 @@ voice-agent/
 │       └── assets/greeting/           # 问候音、挂断音、自检样本（入库）
 ├── moss-live-demo/                # 浏览器直连 demo，用于摸协议、验证音频参数
 ├── scripts/                       # 依赖还原、构建、下发、唤醒词生成
-├── docs/adb-wireless-setup.md     # 无线调试环境与踩坑记录
+├── docs/
+│   ├── adb-wireless-setup.md      # 无线调试环境与踩坑记录
+│   └── kws-wake-tuning.md         # 唤醒灵敏度调优方法与实测数据
 └── .toolchain/                    # JDK / Android SDK / Gradle / Python venv（不入库）
 ```
 
@@ -175,7 +177,7 @@ bash scripts/generate-keywords.sh "小熊小熊"
 |---|---|---|---|
 | 发音变体 | `keywords.txt` 增加行 | 覆盖声调/口音漂移 | 加一条「小读四声」后命中原 40/47 → **47/47**，误唤醒仍 0 |
 | `maxActivePaths` | `WakeDetector.kt` | 多条关键词同时搜索的宽度 | 4 条路径时第二条被挤掉（39/47），**8 才够**；RTF 仅 0.021→0.029 |
-| `:boost`（每行） | `keywords.txt` | 关键词的 log 概率加成 | 1.0 最佳；提到 1.5 起开始误唤醒「小妙小妙」，2.0 反而命中降到 36/47 |
+| `:boost`（每行） | `keywords.txt` | 关键词的 log 概率加成 | 1.0 最佳；1.5 起开始误唤醒「小妙小妙」「小苗小苗」，2.0 命中反而下降 |
 | `#阈值` | `keywords.txt` | 触发门限，越低越敏感 | 0.25~0.35 都在平台区，0.45 掉一例；0.35 左右留余量 |
 
 参数不是拍脑袋定的，用调参台跑出来：
@@ -190,6 +192,8 @@ python scripts/tune-kws.py sweep     # 扫关键词集合/阈值/boost/AGC，打
 想用**自己的录音**验证，把 16 kHz 单声道 wav 丢进 `corpus/pos/` 或 `corpus/neg/` 再 `sweep` 即可。
 
 真机侧还有两个离线语料测不出来的因素：麦克风采集链（当前用 `VOICE_COMMUNICATION`，会走系统 AGC/NS，轻声有利、强降噪可能削掉辅音）与说话距离。如果调参后仍觉得远场不灵，先换 `VOICE_RECOGNITION` 采集源试，再考虑换更大的 KWS 模型。
+
+完整的 boost × 阈值 × 活跃路径实测网格、机制解释和被否掉的方案，见 [docs/kws-wake-tuning.md](docs/kws-wake-tuning.md)。
 
 ## 协议要点
 
@@ -228,6 +232,7 @@ DEMO_ENDPOINT    = "wss://www.moss.cn/api/v1/public/website/moss-live/ws?voice=f
 ## 相关文档
 
 - [docs/adb-wireless-setup.md](docs/adb-wireless-setup.md) —— 无线调试设备信息、双策略自动发现、adb daemon 重启等踩坑记录
+- [docs/kws-wake-tuning.md](docs/kws-wake-tuning.md) —— 唤醒灵敏度调优：调参台用法、实测网格、为什么调阈值治不了口音
 - `scripts/tune-kws.py` —— 唤醒灵敏度调参台：造语料 + 扫关键词变体/阈值/boost，输出命中率与误唤醒
 - `scripts/test-kws-offline.py` —— 用单个关键词文件跑命中率，快速回归
 - `scripts/probe-moss-live.py` / `probe-moss-demo.py` —— 命令行验证 MOSS-Live 连通性
