@@ -34,6 +34,15 @@
     <string name="output_headset">耳机 / 听筒</string>
     <string name="hint_audio_output">选耳机时自动使用已连接的有线/蓝牙耳机，未连接则走听筒</string>
     <string name="btn_selftest">KWS 自检</string>
+    <string name="label_wake_word">唤醒词（2–12 个汉字）</string>
+    <string name="hint_wake_word">改动后立即生效，无需重装。建议 4 字以上、避免叠字近音词；方言读错的声调会自动生成变体。</string>
+    <string name="btn_save_wake_word">应用唤醒词</string>
+    <string name="btn_reset_wake_word">恢复默认</string>
+    <string name="wake_word_current">当前：%1$s</string>
+    <string name="wake_word_phonetics">音素：%1$s（%2$d 条路径）</string>
+    <string name="toast_wake_saved">唤醒词已生效：%1$s</string>
+    <string name="toast_wake_reset">已恢复默认唤醒词</string>
+    <string name="wake_word_empty">请输入唤醒词</string>
     <string name="switch_auto_start">打开应用自动开始监听</string>
     <string name="hint_auto_start">关闭后主页只显示状态，需要在本页点「启动监听」才开始。</string>
     <string name="state_idle">未启动</string>
@@ -44,4 +53,58 @@
     <string name="battery_optimized">电池优化：已开启（息屏可能被冻结，建议关闭）</string>
     <string name="battery_ignored">电池优化：已忽略，息屏可稳定保活</string>
     <string name="battery_unknown">电池优化：状态未知（API &lt; 23 无需处理）</string>
+
+    <!-- 设置页三分区 -->
+    <string name="tab_basic">基本设置</string>
+    <string name="tab_agent">Agent</string>
+    <string name="tab_tone">提示音</string>
+
+    <!-- Agent 分区 -->
+    <string name="hint_agent_page">配置服务路径与角色。Demo 模式使用官网公开服务，人设/指令/音色不可自定义。</string>
+    <string name="label_persona">人设（persona）</string>
+    <string name="hint_persona">描述助手的身份与性格，最多 8000 字</string>
+    <string name="label_instructions">会话指令（instructions）</string>
+    <string name="hint_instructions">业务规则与回答要求，与人设冲突时以此为准</string>
+    <string name="label_dialogue_voice">对话音色编码（voice_id）</string>
+    <string name="hint_voice_id">从 MOSS 音色列表获取的 ID</string>
+    <string name="btn_save_agent">保存 Agent 配置</string>
+    <string name="agent_saved">Agent 配置已保存</string>
+    <string name="hint_agent_demo">当前为 Demo 模式：人设、会话指令、对话音色由官网服务固定，无需也无法配置。切换到 SDK 路径后可填写。</string>
+
+    <!-- 提示音分区 -->
+    <string name="hint_tone_page">设置联通提示音与挂断提示音。Demo 模式使用自带音色；SDK 模式可用 MOSS TTS 按指定音色生成。</string>
+    <string name="label_tts_voice">TTS 音色编码（voice_id）</string>
+    <string name="label_greeting_text">联通提示音文本</string>
+    <string name="hint_greeting_text">例如：你好，我是小喵，请讲</string>
+    <string name="label_farewell_text">挂断提示音文本</string>
+    <string name="hint_farewell_text">例如：好的，对话已结束</string>
+    <string name="btn_gen_greeting">生成联通音</string>
+    <string name="btn_play_greeting">试听</string>
+    <string name="btn_gen_farewell">生成挂断音</string>
+    <string name="btn_play_farewell">试听</string>
+    <string name="hint_tone_demo">当前为 Demo 模式：使用应用自带的固定提示音（暖暖「在呢，老板 / 好的，我退下了」）。上方的音色库仍可浏览和试听；切换到 SDK 路径并保存 Key 后，才能用所选音色重新生成提示音。</string>
+    <string name="tone_gen_ok">%1$s 已生成并保存到设备</string>
+    <string name="tone_gen_fail">生成失败：%1$s</string>
+    <string name="tone_need_key">请先切换到 SDK 路径并保存 API Key</string>
+    <string name="tone_need_voice">请先填写 TTS 音色编码</string>
+    <string name="tone_need_text">请先填写提示音文本</string>
+    <string name="tone_no_file">尚未生成，请先点「生成」</string>
+    <string name="tone_playing">正在试听…</string>
+
+    <!-- 音色库 -->
+    <string name="label_voice_library">MOSS 音色库</string>
+    <string name="hint_voice_library">浏览官方音色，点「试听」直接播放官方试听音频（不消耗积分），点整行选用为提示音音色。</string>
+    <string name="btn_voice_preview">试听</string>
+    <string name="btn_voice_reload">刷新列表</string>
+    <string name="btn_voice_load_more">加载更多</string>
+    <string name="btn_voice_reset">恢复默认</string>
+    <string name="voice_list_loading">正在加载音色库…</string>
+    <string name="voice_list_fail">音色库加载失败：%1$s</string>
+    <string name="voice_list_empty">没有可用的试听音色</string>
+    <string name="voice_selected">已选用：%1$s</string>
+    <string name="voice_previewing">正在试听：%1$s…</string>
+    <string name="voice_preview_fail">试听失败：%1$s</string>
+    <string name="voice_current_label">当前提示音音色：%1$s</string>
+    <string name="voice_reset_done">已恢复默认音色与提示音文本（暖暖）</string>
+    <string name="tone_reset_hint">恢复默认会清空已生成的自定义提示音，回到自带「在呢，老板 / 好的，我退下了」。</string>
 </resources>

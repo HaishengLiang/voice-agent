@@ -23,6 +23,7 @@ class WakeService : Service() {
         const val ACTION_WAKE = "com.example.xiaomiao.WAKE"
         const val ACTION_END_SESSION = "com.example.xiaomiao.END_SESSION"
         const val ACTION_UPDATE_AUDIO = "com.example.xiaomiao.UPDATE_AUDIO"
+        const val ACTION_RELOAD_KWS = "com.example.xiaomiao.RELOAD_KWS"
 
         const val CHANNEL_ID = "moss_wake_channel"
         private const val NOTIFICATION_ID = 1001
@@ -32,6 +33,41 @@ class WakeService : Service() {
             "退下", "再见", "拜拜", "先这样", "就这样吧", "结束对话", "挂了", "不聊了",
             "goodbye", "byebye", "bye", "seeyou",
         )
+
+        /** 道别词判定：去空白/标点、转小写后做包含匹配。提到 companion 便于 JVM 单测。 */
+        internal fun isFarewell(text: String): Boolean {
+            if (text.isBlank()) return false
+            val normalized = text.lowercase().replace(
+                Regex("[\\s，。！？、,.!?~～；;：:\"'“”‘’—\\-]"), ""
+            )
+            if (normalized.isBlank()) return false
+            return FAREWELL_KEYWORDS.any { normalized.contains(it) }
+        }
+
+        /** PCM16 ShortArray 转小端字节流（上行音频格式）。提到 companion 便于 JVM 单测。 */
+        internal fun pcm16ToBytes(frame: ShortArray): ByteArray {
+            val bytes = ByteArray(frame.size * 2)
+            for (i in frame.indices) {
+                val value = frame[i].toInt() and 0xFFFF
+                bytes[i * 2] = (value and 0xFF).toByte()
+                bytes[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
+            }
+            return bytes
+        }
+
+        /**
+         * 通话音量锚定计算：按媒体音量比例算出目标通话音量，限幅最高 80%，永不顶满。
+         * 从 alignCallVolumeToMedia 抽出纯计算部分，便于 JVM 单测（无需 AudioManager）。
+         * 返回 null 表示无需调整（输入非法）。
+         */
+        internal fun computeCallVolume(
+            mediaVol: Int, mediaMax: Int, callMin: Int, callMax: Int,
+        ): Int? {
+            if (mediaMax <= 0 || callMax <= callMin) return null
+            val ratio = (mediaVol.toFloat() / mediaMax.toFloat()).coerceIn(0f, 1f)
+            val capped = if (ratio <= 0f) 0.12f else ratio.coerceAtMost(0.8f)
+            return (callMin + capped * (callMax - callMin)).toInt().coerceIn(callMin, callMax)
+        }
 
         fun createChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -50,6 +86,7 @@ class WakeService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var detector: WakeDetector? = null
     private var capture: AudioCapture? = null
+    private var ringBuffer = AudioRingBuffer()
     private var player: AudioPlayer? = null
     private var greetingPlayer: GreetingPlayer? = null
     private var client: MossRealtimeClient? = null
@@ -68,6 +105,12 @@ class WakeService : Service() {
     private var audioDonePending = false
     private var currentRunId = ""
     private var currentTurnId = ""
+
+    // 环形缓存灌入状态：命中唤醒词时记下帧序号，会话就绪后把其后的帧补灌进上行。
+    @Volatile private var wakeFrameSeq = -1L
+    @Volatile private var flushedWakeSeq = -1L
+    @Volatile private var pendingBufferedFlush = false
+    @Volatile private var micOpened = false
 
     private val idleRunnable = Runnable { endSession("空闲超时，已回到唤醒监听") }
 
@@ -97,6 +140,7 @@ class WakeService : Service() {
                 }
             }
             ACTION_UPDATE_AUDIO -> applyOutputRouting()
+            ACTION_RELOAD_KWS -> reloadDetector()
             else -> startListening()
         }
         return START_STICKY
@@ -160,7 +204,13 @@ class WakeService : Service() {
         try {
             configureAudioForAec()
             detector = WakeDetector(applicationContext)
-            capture = AudioCapture { frame -> onAudioFrame(frame) }
+            ringBuffer.clear()
+            wakeFrameSeq = -1L
+            flushedWakeSeq = -1L
+            capture = AudioCapture(
+                ringBuffer = ringBuffer,
+                onFrame = { frame, seq -> onAudioFrame(frame, seq) },
+            )
             capture?.start()
             player = createPlayer()
             greetingPlayer = GreetingPlayer(applicationContext)
@@ -183,6 +233,27 @@ class WakeService : Service() {
                 "KWS 初始化失败：${e.message ?: e.javaClass.simpleName}",
             )
             stopSelf()
+        }
+    }
+
+    /**
+     * 换词后重建检测器：词表文件已被设置页改写，这里释放旧 spotter 并新建，
+     * 新 stream 从头累积识别上下文。音频采集（capture）保持不变，不打断监听。
+     * 只在唤醒监听态重建；会话进行中不动，避免误伤正在进行的对话。
+     */
+    private fun reloadDetector() {
+        if (phase != VoiceState.Phase.LISTENING_WAKE || capture == null) return
+        try {
+            detector?.release()
+            detector = WakeDetector(applicationContext)
+            wakeFrameSeq = -1L
+            flushedWakeSeq = -1L
+            VoiceState.set(VoiceState.Phase.LISTENING_WAKE, "唤醒词已更新，等待唤醒...")
+            updateNotification("唤醒词已更新，监听中")
+        } catch (e: Throwable) {
+            VoiceState.set(
+                error = "换词失败：${e.message ?: e.javaClass.simpleName}",
+            )
         }
     }
 
@@ -223,11 +294,7 @@ class WakeService : Service() {
         val callMin = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             am.getStreamMinVolume(AudioManager.STREAM_VOICE_CALL)
         } else 0
-        if (mediaMax <= 0 || callMax <= callMin) return
-        val ratio = (mediaVol.toFloat() / mediaMax.toFloat()).coerceIn(0f, 1f)
-        // 留安全余量：最高只到 80%，绝不顶满格刺耳；媒体音量为 0 时给一个很小的可听底噪。
-        val capped = if (ratio <= 0f) 0.12f else ratio.coerceAtMost(0.8f)
-        val target = (callMin + capped * (callMax - callMin)).toInt().coerceIn(callMin, callMax)
+        val target = computeCallVolume(mediaVol, mediaMax, callMin, callMax) ?: return
         if (am.getStreamVolume(AudioManager.STREAM_VOICE_CALL) != target) {
             @Suppress("DEPRECATION")
             am.setStreamVolume(AudioManager.STREAM_VOICE_CALL, target, 0)
@@ -295,7 +362,7 @@ class WakeService : Service() {
         audioManager = null
     }
 
-    private fun onAudioFrame(frame: ShortArray) {
+    private fun onAudioFrame(frame: ShortArray, seq: Long) {
         when (phase) {
             VoiceState.Phase.LISTENING_WAKE -> {
                 try {
@@ -303,6 +370,8 @@ class WakeService : Service() {
                     detector.accept(frame)
                     val keyword = detector.poll()
                     if (keyword != null) {
+                        // 记录命中帧序号：补灌只取该帧之后的语音，不含唤醒词本身。
+                        wakeFrameSeq = seq
                         mainHandler.post { startSession("命中唤醒词：$keyword") }
                     }
                 } catch (e: Throwable) {
@@ -314,16 +383,30 @@ class WakeService : Service() {
             VoiceState.Phase.SESSION_CONNECTING, VoiceState.Phase.SESSION_ACTIVE -> {
                 // 本地问候音播放期间不上传，避免设备外放被麦克风采到当成用户输入。
                 if (System.currentTimeMillis() < suppressMicUntilMs) return
-                val bytes = ByteArray(frame.size * 2)
-                for (i in frame.indices) {
-                    val value = frame[i].toInt() and 0xFFFF
-                    bytes[i * 2] = (value and 0xFF).toByte()
-                    bytes[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
-                }
+                // 会话刚就绪时先补灌缓存里「命中之后」的帧，灌完再走实时上行，保证顺序不倒挂。
+                if (pendingBufferedFlush) flushBufferedFrames(seq)
+                val bytes = pcm16ToBytes(frame)
                 client?.sendBytes(bytes)
             }
             else -> Unit
         }
+    }
+
+    /**
+     * 把环形缓存里唤醒命中之后的帧一次性灌入上行。
+     * 只灌一次（flushedWakeSeq 去重），且灌到当前帧之前，避免与紧随其后的实时帧重复或倒序。
+     */
+    private fun flushBufferedFrames(currentSeq: Long) {
+        if (!pendingBufferedFlush || wakeFrameSeq < 0) {
+            pendingBufferedFlush = false
+            return
+        }
+        pendingBufferedFlush = false
+        flushedWakeSeq = wakeFrameSeq
+        val frames = ringBuffer.range(wakeFrameSeq, currentSeq - 1)
+        if (frames.isEmpty()) return
+        client?.sendBufferedFrames(frames.map { pcm16ToBytes(it) })
+        updateNotification("已补入唤醒后的语音（${frames.size} 帧）")
     }
 
     private fun startSession(reason: String) {
@@ -340,6 +423,10 @@ class WakeService : Service() {
         mainHandler.removeCallbacks(idleRunnable)
         pendingChunks = 0
         audioDonePending = false
+        // 新一轮会话：准备补灌唤醒后的缓存语音（手动唤醒时 wakeFrameSeq 为 -1，自动跳过）。
+        pendingBufferedFlush = wakeFrameSeq >= 0
+        flushedWakeSeq = -1L
+        micOpened = false
         player?.release()
         player = createPlayer()
         player?.start()
@@ -370,15 +457,6 @@ class WakeService : Service() {
         updateNotification("正在连接 ${if (Config.useDemo) "官网 demo" else "MOSS-Live"}...")
     }
 
-    /** 用户说完道别词（如「再见」「退下吧」）时主动结束会话，回到 KWS 监听。 */
-    private fun isFarewell(text: String): Boolean {
-        if (text.isBlank()) return false
-        // 归一化：去空白与常见中英文标点，转小写，避免「再 见」「Good-bye!」漏判
-        val normalized = text.lowercase().replace(Regex("[\\s，。！？、,.!?~～；;：:\"'“”‘’—\\-]"), "")
-        if (normalized.isBlank()) return false
-        return FAREWELL_KEYWORDS.any { normalized.contains(it) }
-    }
-
     private fun handleConnectionState(state: String) {
         // endSession 主动 close 后，旧连接会迟到 "closed"/"error" 回调，
         // 此时已回到 LISTENING_WAKE，忽略以避免覆盖「已回到唤醒监听」状态文案。
@@ -398,6 +476,20 @@ class WakeService : Service() {
         }
     }
 
+    /**
+     * 打开麦克风并进入对话态。可能被多个配置回执（session.updated / voice_changed）
+     * 或 session_attached 触发，用 micOpened 保证一轮会话只执行一次。
+     */
+    private fun openMicAndFlush() {
+        if (micOpened) return
+        if (phase != VoiceState.Phase.SESSION_CONNECTING) return
+        micOpened = true
+        client?.sendJson("mic_state", "enabled" to true)
+        phase = VoiceState.Phase.SESSION_ACTIVE
+        VoiceState.set(VoiceState.Phase.SESSION_ACTIVE, "对话中，可直接说话或打断")
+        updateNotification("MOSS-Live 对话中")
+    }
+
     private fun playAudio(bytes: ByteArray) {
         val meta = client?.pollAudioMeta()
             ?: MossRealtimeClient.AudioMeta("", "", null)
@@ -414,14 +506,41 @@ class WakeService : Service() {
                     endSession("会话建立失败，已回到唤醒监听")
                     return
                 }
-                client?.sendJson("mic_state", "enabled" to true)
-                phase = VoiceState.Phase.SESSION_ACTIVE
-                VoiceState.set(VoiceState.Phase.SESSION_ACTIVE, "对话中，可直接说话或打断")
-                updateNotification("MOSS-Live 对话中")
+                // 非 demo 模式在开启麦克风前下发自定义人设/指令与对话音色。
+                // 按顺序发送：session.update → change_voice → mic_state，
+                // 等 session.updated / voice_changed 回执确认后再开 mic、补灌缓存。
+                if (!Config.useDemo) {
+                    val persona = Config.persona
+                    val instructions = Config.instructions
+                    val dialogueVoice = Config.dialogueVoice
+                    if (persona.isNotBlank() || instructions.isNotBlank()) {
+                        client?.sendSessionConfig(persona, instructions)
+                    }
+                    if (dialogueVoice.isNotBlank()) {
+                        client?.sendChangeVoice(dialogueVoice)
+                    }
+                    // 没有自定义配置需要确认时，直接开麦。
+                    if (persona.isBlank() && instructions.isBlank() && dialogueVoice.isBlank()) {
+                        openMicAndFlush()
+                    }
+                } else {
+                    openMicAndFlush()
+                }
             }
             "session.updated" -> {
                 val error = data.optString("error")
                 if (error.isNotBlank()) VoiceState.set(error = "会话更新失败：$error")
+                // session.update 的回执到达后才开麦，确保人设/指令先生效。
+                if (phase == VoiceState.Phase.SESSION_CONNECTING && !Config.useDemo) {
+                    openMicAndFlush()
+                }
+            }
+            "voice_changed" -> {
+                val error = data.optString("error")
+                if (error.isNotBlank()) VoiceState.set(error = "音色切换失败：$error")
+                if (phase == VoiceState.Phase.SESSION_CONNECTING && !Config.useDemo) {
+                    openMicAndFlush()
+                }
             }
             "input.transcript.updated" -> {
                 VoiceState.setUserText(data.optString("text"))

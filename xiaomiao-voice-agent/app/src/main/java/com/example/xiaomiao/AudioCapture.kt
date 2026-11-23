@@ -15,7 +15,9 @@ import android.media.audiofx.AcousticEchoCanceler
 class AudioCapture(
     private val sampleRate: Int = 16_000,
     private val frameSamples: Int = 640, // 40 ms
-    private val onFrame: (ShortArray) -> Unit,
+    /** 回调第二参数是该帧在环形缓存中的全局序号；未启用缓存时为 -1。 */
+    private val onFrame: (ShortArray, Long) -> Unit,
+    private val ringBuffer: AudioRingBuffer? = null,
 ) {
     @Volatile
     private var running = false
@@ -66,7 +68,13 @@ class AudioCapture(
                         break
                     }
                     when {
-                        n > 0 -> onFrame(buffer.copyOf(n))
+                        n > 0 -> {
+                            val frame = buffer.copyOf(n)
+                            // 采集线程每帧都写入环形缓存（监听唤醒阶段也在写），
+                            // 供唤醒后补灌漏掉的上行音频。
+                            val seq = ringBuffer?.push(frame) ?: -1L
+                            onFrame(frame, seq)
+                        }
                         n < 0 -> {
                             VoiceState.set(error = "麦克风读取错误码 $n")
                             break

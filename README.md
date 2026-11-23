@@ -15,11 +15,14 @@
 | 回声消除 | 切到 `MODE_IN_COMMUNICATION` 让系统 AEC 生效，避免外放被麦克风回采 |
 | 实时打断 | 用户开口时上报，接收 `response.interrupted` 立即停播 |
 | 流式转写 | 上行/下行 transcript 均按 `updated`（流式）+ `done`（定稿）累积成多轮对话 |
-| 本地问候音 | 唤醒瞬间播放 `assets/greeting/female.wav`，播放期间抑制上行，避免自问自答 |
+| 提示音 | 唤醒播联通音、结束播挂断音；demo 用自带 wav，SDK 模式可用 MOSS TTS 按指定音色生成并存设备 |
+| 唤醒语音补灌 | 5 秒环形缓存，把命中唤醒词之后到开麦之间漏掉的语音补灌上行，唤醒与说话更连贯 |
+| 角色可配置 | SDK 模式可设人设（persona）、会话指令（instructions）、对话音色（change_voice）；demo 禁用 |
 | 道别即结束 | 命中「再见」「退下」「不聊了」等词后主动收尾，播放挂断音、回到唤醒监听 |
 | 播放设备可选 | 扬声器外放 / 耳机听筒（有线、USB、蓝牙 SCO），运行时切换即时生效 |
 | 服务路径可选 | 「Demo 路径」直连官网公开服务（免密钥）/「SDK 路径」连 MOSS-Live（需保存 API Key） |
 | 双页面 UI | 主页只展示状态（巨型 logo + 红黄绿状态灯 + 三步指南），配置与启停集中在右上角齿轮进入的设置页 |
+| 设置三分区 | 设置页拆为「基本设置 / Agent / 提示音」三个 Tab，各自独立滚动 |
 | 打开即监听 | 启动应用自动开始唤醒监听（可在设置页关闭），无需手动点按钮 |
 
 ## 工作流程
@@ -32,7 +35,7 @@ LISTENING_WAKE  →  SESSION_CONNECTING  →  SESSION_ACTIVE  →  LISTENING_WAK
 | 阶段 | 做什么 | 关键点 |
 |---|---|---|
 | 息屏待机 `LISTENING_WAKE` | 麦克风逐帧喂给 KWS | 命中「小喵小喵」即唤醒 |
-| 唤醒 `SESSION_CONNECTING` | 播放本地问候音、建立 WebSocket | 播放期间抑制上行，避免把问候音当成用户输入 |
+| 唤醒 `SESSION_CONNECTING` | 播联通提示音、建立 WebSocket、下发人设/指令/音色 | 播放期间抑制上行；开麦后先把环形缓存里「命中之后」的语音补灌 |
 | 对话 `SESSION_ACTIVE` | PCM 上行 + 下行音频播放 | 可随时打断，多轮对话累积展示 |
 | 结束 | 播放挂断音、释放音频通道 | 回到唤醒监听，服务不退出 |
 
@@ -148,26 +151,22 @@ bash scripts/build-apk.sh
 
 ## 修改唤醒词
 
-唤醒词不开放界面配置，需在构建期改。当前关键词由 `assets/kws/keywords.txt` 决定，**两行**：
+**推荐：在应用里改，即时生效，不用重装。** 设置页「基本设置」→ 唤醒词，输入中文词点「应用唤醒词」即可。
+App 用构建期生成的 `assets/kws/pinyin_map.txt`（pypinyin 音素映射）在本地把中文转成 sherpa 的音素序列，
+写入 `filesDir/kws/keywords.txt` 并重建检测器；方言读错的声调会自动生成变体行。
+模型首次启动会复制到 filesDir（4.9 MB），之后换词只改几行文本。当前默认词「小喵小喵」。
 
-```
-x iǎo m iāo x iǎo m iāo :1.0 #0.35 @小喵小喵   ← 标准读音（小=三声，喵=一声）
-x iào m iāo x iào m iāo :1.0 #0.35 @小喵小喵   ← 方言/口音把「小」读四声时命中
-```
+注意事项：
 
-一行的格式是 `<音素序列> :<boost> #<阈值> @<显示文本>`，四个部分是 sherpa-onnx 的关键词协议。
+- 建议 4 个汉字以上、避免双音节叠字（两音节词误唤醒率高，实测「小喵」命中不涨、误唤醒 0→8/21）。
+- 生僻字若不在音素表（20872 字）会提示转换失败；多音字取常用读音，次读音暂不覆盖。
+- 换词后若「KWS 自检」报未命中，是因为它播的是默认词录音；可在 `filesDir/wake_test.wav` 放一段新词录音供自检使用。
+- 换词若导致误唤醒升高，按下面「唤醒灵敏度调优」重新扫参数。
 
-用脚本重新生成（依赖 `.toolchain/venv` 里的 `sherpa-onnx-cli`，会把中文转成 ppinyin 音素序列，并自动追加四声变体）：
-
-```bash
-bash scripts/generate-keywords.sh "小熊小熊"
-```
-
-然后重新构建、下发。注意事项：
-
-- 模型是通用 zipformer2 transducer，关键词靠音素序列约束解码，所以**任选中文词都能用**，不必重训模型；但音节必须存在于 `tokens.txt`（227 个 ppinyin 音素）。
-- 双音节词（如「小喵」）误唤醒率明显偏高，建议 4 个音节以上、叠词更稳。实测把两音节「小喵」也加进关键词，命中率涨 0、误唤醒从 0 涨到 8/21，**不要加**。
-- 「KWS 自检」播放的是固定样本 `assets/greeting/xiaomiao_test.wav`（「小喵小喵」录音）。改词后自检必然报「未命中」，属预期行为，需同步替换样本。
+**构建期改法（兜底）**：仍可用 `scripts/generate-keywords.sh "小熊小熊"` 直接改 `assets/kws/keywords.txt`
+再重打包。映射表本身由 `scripts/build-pinyin-map.py` 生成（改字表时用）。
+模型是通用 zipformer2 transducer，任选中文词都能用、不必重训，但音节必须存在于 `tokens.txt`（227 项）。
+详见 `docs/runtime-wake-word-swap.md`。
 
 ## 唤醒灵敏度调优
 
@@ -231,6 +230,7 @@ DEMO_ENDPOINT    = "wss://www.moss.cn/api/v1/public/website/moss-live/ws?voice=f
 
 ## 相关文档
 
+- [docs/agent-and-tones.md](docs/agent-and-tones.md) —— 设置三分区、MOSS 实时会话配置协议、TTS 提示音生成、5 秒环形缓存补灌的实现与踩坑
 - [docs/adb-wireless-setup.md](docs/adb-wireless-setup.md) —— 无线调试设备信息、双策略自动发现、adb daemon 重启等踩坑记录
 - [docs/kws-wake-tuning.md](docs/kws-wake-tuning.md) —— 唤醒灵敏度调优：调参台用法、实测网格、为什么调阈值治不了口音
 - `scripts/tune-kws.py` —— 唤醒灵敏度调参台：造语料 + 扫关键词变体/阈值/boost，输出命中率与误唤醒

@@ -91,6 +91,42 @@ class MossRealtimeClient(
         socket?.send(ByteString.of(*data))
     }
 
+    /** 灌入唤醒前缓存的音频帧（16 kHz mono PCM16），与实时上行同一通道。 */
+    fun sendBufferedFrames(frames: List<ByteArray>) {
+        frames.forEach { socket?.send(ByteString.of(*it)) }
+    }
+
+    /**
+     * 下发人设与会话指令。对应 action=session.update，携带 session 对象：
+     * { "persona": {"prompt": ...}, "instructions": ... }
+     * 空字符串不下发该字段，避免用空值覆盖服务端默认行为。
+     */
+    fun sendSessionConfig(persona: String, instructions: String) {
+        val session = JSONObject()
+        if (persona.isNotBlank()) {
+            session.put("persona", JSONObject().put("prompt", persona))
+        }
+        if (instructions.isNotBlank()) {
+            session.put("instructions", instructions)
+        }
+        if (session.length() == 0) return
+        val obj = JSONObject()
+            .put("action", "session.update")
+            .put("session", session)
+        socket?.send(obj.toString())
+    }
+
+    /** 切换实时对话音色，对应 action=change_voice / voice_name。 */
+    fun sendChangeVoice(voiceName: String) {
+        if (voiceName.isBlank()) return
+        socket?.send(
+            JSONObject()
+                .put("action", "change_voice")
+                .put("voice_name", voiceName)
+                .toString()
+        )
+    }
+
     fun sendJson(action: String, vararg fields: Pair<String, Any?>) {
         val obj = JSONObject().put("action", action)
         fields.forEach { (key, value) ->
