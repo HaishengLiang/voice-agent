@@ -122,4 +122,31 @@ class WakeServiceLogicTest {
         // mediaVol 超过 mediaMax → ratio 钳制 1.0 → capped 0.8 → 12
         assertEquals(12, WakeService.computeCallVolume(99, 16, 0, 15))
     }
+
+    // ---------- 补灌诊断纯函数 ----------
+
+    @Test
+    fun `pcmPeak 取绝对值峰值且覆盖 Short_MIN_VALUE`() {
+        assertEquals(0, WakeService.pcmPeak(shortArrayOf(0, 0)))
+        assertEquals(3200, WakeService.pcmPeak(shortArrayOf(1200, -3200, 800)))
+        assertEquals(32768, WakeService.pcmPeak(shortArrayOf(Short.MIN_VALUE)))
+    }
+
+    @Test
+    fun `pcmRms 全静音为零且有声帧大于零`() {
+        assertEquals(0, WakeService.pcmRms(listOf(ShortArray(640), ShortArray(640))))
+        val loud = ShortArray(640) { 1000 }
+        assertTrue("有声帧 RMS 应大于 0", WakeService.pcmRms(listOf(loud)) > 0)
+        assertTrue("空列表 RMS 为 0", WakeService.pcmRms(emptyList()) == 0)
+    }
+
+    @Test
+    fun `peaksCompact 按帧输出峰值序列`() {
+        val frames = listOf(
+            shortArrayOf(100, -100),
+            shortArrayOf(0, 0),
+            shortArrayOf(-500, 200),
+        )
+        assertEquals("100,0,500", WakeService.peaksCompact(frames))
+    }
 }

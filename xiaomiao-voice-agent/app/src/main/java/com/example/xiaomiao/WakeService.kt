@@ -13,6 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import org.json.JSONObject
 
@@ -27,6 +28,33 @@ class WakeService : Service() {
 
         const val CHANNEL_ID = "moss_wake_channel"
         private const val NOTIFICATION_ID = 1001
+
+        private const val DIAG_TAG = "BufDiag"
+
+        /** 单帧峰值绝对值，用来判断补灌帧是否被 AEC 削成静音。 */
+        internal fun pcmPeak(frame: ShortArray): Int {
+            var peak = 0
+            for (s in frame) {
+                val a = if (s < 0) -s.toInt() else s.toInt()
+                if (a > peak) peak = a
+            }
+            return peak
+        }
+
+        /** 一组帧的 RMS，0 表示全静音。 */
+        internal fun pcmRms(frames: List<ShortArray>): Int {
+            var sum = 0.0
+            var count = 0
+            for (f in frames) for (s in f) {
+                sum += s.toDouble() * s.toDouble()
+                count++
+            }
+            return if (count == 0) 0 else kotlin.math.sqrt(sum / count).toInt()
+        }
+
+        /** 每帧峰值压成紧凑串，便于在 logcat 里看能量落在哪个时间段。 */
+        internal fun peaksCompact(frames: List<ShortArray>): String =
+            frames.joinToString(",") { pcmPeak(it).toString() }
 
         // 用户道别关键词：命中后主动结束会话、关闭 WebSocket、回到 KWS 唤醒监听
         private val FAREWELL_KEYWORDS = listOf(
@@ -111,6 +139,12 @@ class WakeService : Service() {
     @Volatile private var flushedWakeSeq = -1L
     @Volatile private var pendingBufferedFlush = false
     @Volatile private var micOpened = false
+
+    // 补灌诊断：记录各时间点的墙钟时间，便于在 logcat 里对齐时序。
+    private var diagWakeAtMs = 0L
+    private var diagSessionAtMs = 0L
+    private var diagSuppressEndLogged = false
+    private var diagLiveFrames = 0
 
     private val idleRunnable = Runnable { endSession("空闲超时，已回到唤醒监听") }
 
@@ -372,6 +406,8 @@ class WakeService : Service() {
                     if (keyword != null) {
                         // 记录命中帧序号：补灌只取该帧之后的语音，不含唤醒词本身。
                         wakeFrameSeq = seq
+                        diagWakeAtMs = System.currentTimeMillis()
+                        Log.d(DIAG_TAG, "WAKE_HIT seq=$seq at=$diagWakeAtMs latest=${ringBuffer.latestSeq()}")
                         mainHandler.post { startSession("命中唤醒词：$keyword") }
                     }
                 } catch (e: Throwable) {
@@ -381,10 +417,25 @@ class WakeService : Service() {
                 }
             }
             VoiceState.Phase.SESSION_CONNECTING, VoiceState.Phase.SESSION_ACTIVE -> {
+                val now = System.currentTimeMillis()
                 // 本地问候音播放期间不上传，避免设备外放被麦克风采到当成用户输入。
-                if (System.currentTimeMillis() < suppressMicUntilMs) return
+                if (now < suppressMicUntilMs) return
+                // 抑制刚解除的这一帧：记录它相对唤醒的时刻——这就是补灌窗口的右边界。
+                if (!diagSuppressEndLogged) {
+                    diagSuppressEndLogged = true
+                    Log.d(
+                        DIAG_TAG,
+                        "SUPPRESS_END seq=$seq at=$now sinceWake=${now - diagWakeAtMs}ms " +
+                            "suppressUntil=$suppressMicUntilMs micOpened=$micOpened pending=$pendingBufferedFlush",
+                    )
+                }
                 // 会话刚就绪时先补灌缓存里「命中之后」的帧，灌完再走实时上行，保证顺序不倒挂。
                 if (pendingBufferedFlush) flushBufferedFrames(seq)
+                // 实时上行帧每秒打一次峰值，用来判断用户真正说话时是否有能量。
+                diagLiveFrames++
+                if (diagLiveFrames % 25 == 1) {
+                    Log.d(DIAG_TAG, "LIVE_FRAME seq=$seq at=$now peak=${pcmPeak(frame)}")
+                }
                 val bytes = pcm16ToBytes(frame)
                 client?.sendBytes(bytes)
             }
@@ -404,6 +455,13 @@ class WakeService : Service() {
         pendingBufferedFlush = false
         flushedWakeSeq = wakeFrameSeq
         val frames = ringBuffer.range(wakeFrameSeq, currentSeq - 1)
+        Log.d(
+            DIAG_TAG,
+            "FLUSH wakeSeq=$wakeFrameSeq curSeq=$currentSeq count=${frames.size} " +
+                "rms=${pcmRms(frames)} at=${System.currentTimeMillis()} " +
+                "sinceWake=${System.currentTimeMillis() - diagWakeAtMs}ms " +
+                "peaks=[${peaksCompact(frames)}]",
+        )
         if (frames.isEmpty()) return
         client?.sendBufferedFrames(frames.map { pcm16ToBytes(it) })
         updateNotification("已补入唤醒后的语音（${frames.size} 帧）")
@@ -427,6 +485,9 @@ class WakeService : Service() {
         pendingBufferedFlush = wakeFrameSeq >= 0
         flushedWakeSeq = -1L
         micOpened = false
+        diagSessionAtMs = System.currentTimeMillis()
+        diagSuppressEndLogged = false
+        diagLiveFrames = 0
         player?.release()
         player = createPlayer()
         player?.start()
@@ -440,6 +501,12 @@ class WakeService : Service() {
             updateNotification("已唤醒，正在接入...")
             VoiceState.set(VoiceState.Phase.SESSION_CONNECTING, "$reason，正在接入...")
         }
+        Log.d(
+            DIAG_TAG,
+            "SESSION_START at=$diagSessionAtMs sinceWake=${diagSessionAtMs - diagWakeAtMs}ms " +
+                "pending=$pendingBufferedFlush wakeSeq=$wakeFrameSeq " +
+                "greetingMs=$greetingMs suppressUntil=$suppressMicUntilMs",
+        )
 
         client = MossRealtimeClient(
             endpoint = Config.endpoint,
@@ -484,8 +551,14 @@ class WakeService : Service() {
         if (micOpened) return
         if (phase != VoiceState.Phase.SESSION_CONNECTING) return
         micOpened = true
+        val micAt = System.currentTimeMillis()
         client?.sendJson("mic_state", "enabled" to true)
         phase = VoiceState.Phase.SESSION_ACTIVE
+        Log.d(
+            DIAG_TAG,
+            "MIC_OPEN at=$micAt sinceWake=${micAt - diagWakeAtMs}ms " +
+                "suppressUntil=$suppressMicUntilMs pending=$pendingBufferedFlush",
+        )
         VoiceState.set(VoiceState.Phase.SESSION_ACTIVE, "对话中，可直接说话或打断")
         updateNotification("MOSS-Live 对话中")
     }
